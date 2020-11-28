@@ -1,0 +1,196 @@
+#!/bin/bash
+# AUTHOR: Chandra Munukutla
+# DESC: Get New Relic Metrics
+# Requirements: API_KEY need to be either hardcoded OR get that dynamically from a secrets manger (AWS Secrets Manager) OR Hashicorp Vault.
+#               "jq" assumed to be installed on the Node where you are executing this as a script OR sourcing this as a profile.
+#               Assuming a Linux/Linux compatible node and curl to be installed on the node.
+###########################################################################################################################################
+# Few Hardcoded details.
+API_KEY="abcdefg1234567890123456789012345678901234567890"
+NR_API_URL="https://api.newrelic.com/v2"
+NR_APPS_URL="${NR_API_URL}/applications"
+########################################################################################################
+nr_list_app_name_and_id()
+{
+  if [[ $# -eq 0 && -n ${API_KEY} ]]; then
+     curl -s -X GET "${NR_API_URL}/applications.json" -H "X-Api-Key:${API_KEY}" | jq -cr '.applications[]|[.name,.id] | @csv' | sed 's/"//g'
+  fi
+}
+########################################################################################################
+nr_get_app_id()
+{
+  # Given the <APP_NAME> as argument, get the <APP_ID>
+  if [[ $# -eq 1 && -n ${API_KEY} ]]; then
+     APP_NAME="${1}"
+     curl -s -X GET "${NR_API_URL}/applications.json" -H "X-Api-Key:${API_KEY}" | jq -cr '.applications[]|select(.name | contains("'"${APP_NAME}"'")) |.id'
+  else
+     echo "USAGE: ${FUNCNAME[0]} <APP_NAME>"
+     echo "Will get APP_ID matching the APP_NAME you provide as argument"
+  fi
+}
+########################################################################################################
+nr_get_app_instance_ids()
+{
+  if [[ $# -eq 1 && -n ${API_KEY} ]]; then
+      APP_ID="${1}"
+      curl -s -X GET "${NR_APPS_URL}/${APP_ID}/instances.json" -H "X-Api-Key:${API_KEY}" | jq -cr '.application_instances[].id'
+  else
+      echo "USAGE: ${FUNCNAME[0]} <APP_ID>"
+      echo "Prints instance ids for the <APP_ID>"
+  fi
+}
+########################################################################################################
+nr_get_app_hostnames()
+{
+  if [[ $# -eq 1 && -n ${API_KEY} ]]; then
+     APP_ID="${1}"
+     curl -s -X GET "${NR_APPS_URL}/${APP_ID}/hosts.json" -H "X-Api-Key:${API_KEY}" | jq -cr '.application_hosts[].host'
+  else
+     echo "USAGE: ${FUNCNAME[0]} <APP_ID>"
+     echo "Prints hostnames for the <APP_ID>"
+  fi
+}
+########################################################################################################
+nr_get_app_hostname_and_host_ids()
+{
+  if [[ $# -eq 1 && -n ${API_KEY} ]]; then
+     APP_ID="${1}"
+     curl -s -X GET "${NR_APPS_URL}/${APP_ID}/hosts.json" -H "X-Api-Key:${API_KEY}" | jq -cr '.application_hosts[]|[.host,.id] | @csv' | sed 's/"//g'
+  else
+     echo "USAGE: ${FUNCNAME[0]} <APP_ID>"
+     echo "Prints hostname,id Comma Separated list for the <APP_ID>"
+  fi
+}
+########################################################################################################
+nr_get_app_host_ids()
+{
+  if [[ $# -eq 1 && -n ${API_KEY} ]]; then
+     APP_ID="${1}"
+     curl -s -X GET "${NR_APPS_URL}/${APP_ID}/hosts.json" -H "X-Api-Key:${API_KEY}" | jq -cr '.application_hosts[].id'
+  else
+     echo "USAGE: ${FUNCNAME[0]} <APP_ID>"
+     echo "Prints host ids for the <APP_ID>"
+  fi
+}
+########################################################################################################
+nr_get_hostname_from_host_id()
+{
+  if [[ $# -eq 2 && -n ${API_KEY} ]]; then
+     APP_ID="${1}"
+     HOST_ID="${2}"
+     curl -s -X GET "${NR_APPS_URL}/${APP_ID}/hosts.json" -H "X-Api-Key:${API_KEY}" | jq -cr '.application_hosts[] | select(.id == '"${HOST_ID}"') | .host'
+  else
+     echo "USAGE: ${FUNCNAME[0]} <APP_ID> <HOST_ID>"
+     echo "Prints Hostname for the <HOST_ID> pertaining to <APP_ID>"
+  fi
+}
+########################################################################################################
+nr_get_jvm_gc()
+{
+#curl -X GET 'https://api.newrelic.com/v2/applications.json' -H "X-Api-Key:${API_KEY}" -i
+  if [[ $# -eq 2 && -n ${API_KEY} ]]; then
+     APP_ID="${1}"
+     INST_ID="${2}"
+     curl -s -X GET "${NR_APPS_URL}/${APP_ID}/instances/${INST_ID}/metrics/data.xml" -H "X-Api-Key:${API_KEY}" -d 'names[]=${GC}&values[]=time_percentage'
+  else
+     echo "USAGE: ${FUNCNAME[0]} <APP_ID> <INST_ID>"
+     echo "Prints JVM GC Metrics for the <INST_ID> pertaining to <APP_ID>"
+  fi
+}
+########################################################################################################
+nr_get_metric_names()
+{
+  if [[ $# -eq 1 && -n ${API_KEY} ]]; then
+     APP_ID="${1}"
+     curl -X GET "${NR_APPS_URL}/${APP_ID}/metrics.json" -H "X-Api-Key:${API_KEY}" | jq . > metrics.json
+  else
+     echo "USAGE: ${FUNCNAME[0]} <APP_ID>"
+     echo "Prints the Metric Names pertaining to <APP_ID>" 
+  fi
+}
+########################################################################################################
+nr_get_jvm_cpu_usage()
+{
+  if [[ $# -eq 2 && -n ${API_KEY} ]]; then
+     APP_ID="${1}"
+     HOST_ID="${2}"
+     curl -s -X GET "${NR_APPS_URL}/${APP_ID}/hosts/${HOST_ID}/metrics/data.json" \
+     -H "X-Api-Key:${API_KEY}" -d 'names[]=CPU/User+Time&values[]=percent&summarize=true' | jq -c '.metric_data.metrics[].timeslices[].values.percent'
+  else
+     echo "USAGE: ${FUNCNAME[0]} <APP_ID> <HOST_ID>"
+     echo "Prints JVM CPU Usage for the <HOST_ID> pertaining to <APP_ID>"
+  fi
+}
+########################################################################################################
+nr_get_jvm_heap_usage()
+{
+  if [[ $# -eq 2 && -n ${API_KEY} ]]; then
+     APP_ID="${1}"
+     INSTANCE="${2}"
+     curl -s -X GET "https://api.newrelic.com/v2/applications/${APP_ID}/instances/${INSTANCE}/metrics/data.xml" -H "X-Api-Key:${API_KEY}" -d 'names[]=Memory/Heap/Used&names[]=Memory/Heap/Max&names[]=Memory/Heap/Committed&values[]=used_mb_by_host'
+  else
+     echo "USAGE: ${FUNCNAME[0]} <APP_ID> <INSTANCE>"
+     echo "Prints JVM HEAP Usage for the <INSTANCE> pertaining to <APP_ID>"
+  fi
+}
+########################################################################################################
+nr_get_host_jvm_cpu()
+{
+  if [[ $# -eq 1 && -n ${API_KEY} ]]; then
+     APP_ID="${1}"
+     for HOST_INFO in $(nr_get_app_hostname_and_host_ids ${APP_ID})
+     do
+       HOST_ID=$(echo $HOST_INFO | cut -d, -f2)
+       echo -n "${HOST_INFO},"
+       nr_get_jvm_cpu_usage ${APP_ID} ${HOST_ID}
+     done
+  else
+     echo "USAGE: ${FUNCNAME[0]} <APP_ID>"
+     echo "Prints csv in format <HOST_NAME>,<HOST_ID>,<App_JVM_Avg_CPU_Usage>" 
+  fi
+}
+########################################################################################################
+########################################################################################################
+# Given NR App Name ==> "ABC_Prod", here is how to get the APP_ID
+
+# ABC_APP_ID=$(nr_get_app_id 'ABC_Prod')
+# Which gives ABC_APP_ID=123456789
+#nr_list_app_name_and_id
+#nr_get_app_hostnames ${ABC_APP_ID}
+#nr_get_app_hostname_and_host_ids ${ABC_APP_ID}
+#nr_get_app_host_ids ${ABC_APP_ID}
+#nr_get_app_instance_ids ${ABC_APP_ID}
+#for i in $(nr_get_app_instance_ids ${ABC_APP_ID})
+#do
+#  echo "For ${i}"
+#  nr_get_jvm_gc ${ABC_APP_ID} ${i} | grep time_percentage
+#  echo "##############################################"
+#done
+
+#for i in $(nr_get_app_instance_ids ${ABC_APP_ID})
+#do
+#  echo "For ${i}"
+#  nr_get_jvm_heap_usage ${ABC_APP_ID} ${i} | grep used_mb_by_host
+#  echo "##############################################"
+#done
+
+#for i in $(nr_get_app_host_ids ${ABC_APP_ID})
+#do
+#  echo -n "For HOST_ID - ${i} - "
+#  nr_get_hostname_from_host_id ${ABC_APP_ID} ${i}
+#  nr_get_jvm_cpu_usage ${ABC_APP_ID} ${i}
+#  echo "##############################################"
+#done
+
+###############################################
+# nr_get_host_jvm_cpu ${ABC_APP_ID}  # will print an output like below..
+# ABC Prod hostname, NR specific HOST_ID, Average App JVM CPU usage
+
+# Example
+#abc-prod-1,123456789,46.5
+#abc-prod-2,234567891,44.2
+#abc-prod-3,345678912,46.5
+#abc-prod-4,456789123,44.9
+#abc-prod-5,567891234,42.3
+
+################################################################################
